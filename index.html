@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="ckb" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>کیبۆردی کوردی (KBoloorian)</title>
+<style>
+  body {
+    font-family: Tahoma, Arial, sans-serif;
+    background: #f4f4f9;
+    padding: 20px;
+    margin: 0;
+    padding-bottom: 320px;
+  }
+  .demo-box {
+    max-width: 500px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+  }
+  .kurdish-input {
+    width: 100%;
+    padding: 14px;
+    font-size: 18px;
+    border: 2px solid #ccc;
+    border-radius: 10px;
+    box-sizing: border-box;
+    outline: none;
+    background: #fff;
+  }
+  .kurdish-input:focus {
+    border-color: #2563eb;
+  }
+  #kb-container {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #141414;
+    color: #fff;
+    z-index: 999999;
+    user-select: none;
+    -webkit-user-select: none;
+    box-shadow: 0 -4px 15px rgba(0,0,0,0.4);
+    transform: translateY(100%);
+    transition: transform 0.25s ease-out;
+    direction: rtl;
+    padding-bottom: env(safe-area-inset-bottom, 6px);
+  }
+  #kb-container.kb-open {
+    transform: translateY(0);
+  }
+  #kb-suggestions {
+    display: flex;
+    align-items: center;
+    background: #1f1f1f;
+    border-bottom: 1px solid #2e2e2e;
+    height: 40px;
+    padding: 0 6px;
+    gap: 6px;
+    overflow-x: auto;
+  }
+  .kb-sug-item {
+    flex: 1;
+    text-align: center;
+    padding: 6px 8px;
+    font-size: 15px;
+    color: #e5e5e5;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .kb-sug-item.autocorrect {
+    color: #4ade80;
+    font-weight: bold;
+    background: rgba(74, 222, 128, 0.12);
+  }
+  #kb-hide-btn {
+    background: #2b2b2b;
+    color: #aaa;
+    border: none;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .kb-row {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    padding: 3px 4px;
+  }
+  .kb-key {
+    position: relative;
+    flex: 1;
+    height: 46px;
+    background: #2b2b2b;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    font-size: 20px;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 1px 0 #000;
+    touch-action: manipulation;
+  }
+  .kb-key:active, .kb-key.active {
+    background: #555555;
+    transform: scale(0.96);
+  }
+  .kb-key .sub-num {
+    position: absolute;
+    top: 2px;
+    right: 4px;
+    font-size: 10px;
+    color: #9ca3af;
+  }
+  .kb-key.special {
+    background: #1f1f1f;
+    font-size: 16px;
+    color: #d1d5db;
+  }
+  .kb-key.space {
+    flex: 4;
+    font-size: 14px;
+    color: #9ca3af;
+  }
+  .kb-key.wide {
+    flex: 1.4;
+  }
+</style>
+</head>
+<body>
+
+<div class="demo-box">
+  <h3>تاقیکردنەوەی کیبۆردی کوردی:</h3>
+  <input type="text" class="kurdish-input" placeholder="لێرە بنووسە (بۆ نموونە: سلاو)...">
+  <textarea rows="3" class="kurdish-input" placeholder="دەقێکی درێژتر لێرە بنووسە..."></textarea>
+</div>
+
+<div id="kb-container">
+  <div id="kb-suggestions">
+    <div class="kb-sug-item" id="sug-1"></div>
+    <div class="kb-sug-item" id="sug-2"></div>
+    <div class="kb-sug-item" id="sug-3"></div>
+    <button id="kb-hide-btn" type="button">▼</button>
+  </div>
+  <div id="kb-keys"></div>
+</div>
+
+<script>
+(function() {
+  let activeInput = null;
+  let isSymbolMode = false;
+  let deleteInterval = null;
+
+  const corrections = {
+    "سلاو": "سڵاو", "سلآو": "سڵاو", "چوني": "چۆنی", "چۆني": "چۆنی",
+    "باشي": "باشی", "سپاس": "سوپاس", "كوردستان": "کوردستان",
+    "هةولير": "هەولێر", "هه ولير": "هەولێر", "سليماني": "سلێمانی",
+    "سلێماني": "سلێمانی", "دهوك": "دهۆک", "كركوك": "کەرکووک",
+    "قةلادزي": "قەڵادزێ", "قەلادزێ": "قەڵادزێ", "ئةمة": "ئەمە",
+    "زور": "زۆر", "خوشم": "خۆشم", "دةويت": "دەوێت", "ئيمرو": "ئەمڕۆ",
+    "بةياني": "بەیانی", "باشترين": "باشترین", "هةموو": "هەموو",
+    "لةگةل": "لەگەڵ", "بو": "بۆ", "چون": "چۆن", "كةي": "کەی"
+  };
+
+  const dictionary = [
+    "سڵاو", "چۆنی", "باشی", "سوپاس", "کوردستان", "هەولێر", "سلێمانی",
+    "دهۆک", "کەرکووک", "قەڵادزێ", "ئەمڕۆ", "بەیانی", "زۆر", "باشە",
+    "بەڵێ", "نەخێر", "بۆچی", "چۆن", "کەی", "لەگەڵ", "هەموو", "ئێمە"
+  ];
+
+  const letterRows = [
+    [
+      { k: "ق", n: "١" }, { k: "ڤ", n: "٢" }, { k: "ف", n: "٣" }, { k: "غ", n: "٤" },
+      { k: "ع", n: "٥" }, { k: "هـ", n: "٦" }, { k: "ە", n: "٧" }, { k: "ت", n: "٨" },
+      { k: "ح", n: "٩" }, { k: "خ", n: "٠" }
+    ],
+    [
+      { k: "ش" }, { k: "س" }, { k: "ی" }, { k: "ێ" }, { k: "ل" },
+      { k: "ڵ" }, { k: "ا" }, { k: "ن" }, { k: "ج" }, { k: "چ" }
+    ],
+    [
+      { k: "ب" }, { k: "ز" }, { k: "ر" }, { k: "ڕ" }, { k: "د" },
+      { k: "وو" }, { k: "و" }, { k: "ۆ" }, { k: "ک" }, { k: "گ" }
+    ],
+    [
+      { k: "⇥", type: "tab", cls: "special" },
+      { k: "ئـ" }, { k: "پ" }, { k: "ژ" }, { k: "م" },
+      { k: "؟" }, { k: "،" }, { k: "." },
+      { k: "⌫", type: "backspace", cls: "special wide" }
+    ],
+    [
+      { k: "١/٢", type: "mode", cls: "special wide" },
+      { k: "کوردی (KBoloorian)", type: "space", cls: "space" },
+      { k: "!؟", type: "punct", cls: "special" },
+      { k: "↵", type: "enter", cls: "special wide" }
+    ]
+  ];
+
+  const symbolRows = [
+    [{ k: "١" }, { k: "٢" }, { k: "٣" }, { k: "٤" }, { k: "٥" }, { k: "٦" }, { k: "٧" }, { k: "٨" }, { k: "٩" }, { k: "٠" }],
+    [{ k: "@" }, { k: "#" }, { k: "$" }, { k: "_" }, { k: "&" }, { k: "-" }, { k: "+" }, { k: "(" }, { k: ")" }, { k: "/" }],
+    [{ k: "*" }, { k: "\"" }, { k: "'" }, { k: ":" }, { k: ";" }, { k: "!" }, { k: "؟" }, { k: "%" }, { k: "=" }, { k: "«" }],
+    [
+      { k: "»" }, { k: "{" }, { k: "}" }, { k: "[" }, { k: "]" }, { k: "،" }, { k: "." },
+      { k: "⌫", type: "backspace", cls: "special wide" }
+    ],
+    [
+      { k: "ئـ ب پ", type: "mode", cls: "special wide" },
+      { k: "بۆشایی", type: "space", cls: "space" },
+      { k: "↵", type: "enter", cls: "special wide" }
+    ]
+  ];
+
+  const kbContainer = document.getElementById("kb-container");
+  const kbKeys = document.getElementById("kb-keys");
+  const sugEls = [
+    document.getElementById("sug-1"),
+    document.getElementById("sug-2"),
+    document.getElementById("sug-3")
+  ];
+
+  function renderKeys() {
+    kbKeys.innerHTML = "";
+    const rows = isSymbolMode ? symbolRows : letterRows;
+
+    rows.forEach(row => {
+      const rowDiv = document.createElement("div");
+      rowDiv.className = "kb-row";
+
+      row.forEach(item => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "kb-key " + (item.cls || "");
+        btn.textContent = item.k;
+
+        if (item.n) {
+          const span = document.createElement("span");
+          span.className = "sub-num";
+          span.textContent = item.n;
+          btn.appendChild(span);
+        }
+
+        let pressTimer = null;
+        let longPressed = false;
+
+        const startPress = (e) => {
+          e.preventDefault();
+          longPressed = false;
+          btn.classList.add("active");
+
+          if (item.type === "backspace") {
+            deleteChar();
+            deleteInterval = setInterval(deleteChar, 90);
+          } else if (item.n) {
+            pressTimer = setTimeout(() => {
+              longPressed = true;
+              insertText(item.n);
+            }, 400);
+          }
+        };
+
+        const endPress = (e) => {
+          e.preventDefault();
+          btn.classList.remove("active");
+          clearTimeout(pressTimer);
+          clearInterval(deleteInterval);
+
+          if (longPressed || item.type === "backspace") return;
+
+          if (item.type === "space") {
+            applyAutoCorrect();
+            insertText(" ");
+          } else if (item.type === "enter") {
+            applyAutoCorrect();
+            if (activeInput && activeInput.tagName === "TEXTAREA") {
+              insertText("\n");
+            } else {
+              hideKeyboard();
+            }
+          } else if (item.type === "tab") {
+            insertText("    ");
+          } else if (item.type === "mode") {
+            isSymbolMode = !isSymbolMode;
+            renderKeys();
+          } else if (item.type === "punct") {
+            insertText("؟");
+          } else {
+            insertText(item.k);
+          }
+        };
+
+        btn.addEventListener("touchstart", startPress, { passive: false });
+        btn.addEventListener("touchend", endPress);
+        btn.addEventListener("mousedown", startPress);
+        btn.addEventListener("mouseup", endPress);
+        btn.addEventListener("mouseleave", () => {
+          btn.classList.remove("active");
+          clearTimeout(pressTimer);
+          clearInterval(deleteInterval);
+        });
+
+        rowDiv.appendChild(btn);
+      });
+
+      kbKeys.appendChild(rowDiv);
+    });
+  }
+
+  function insertText(text) {
+    if (!activeInput) return;
+    const start = activeInput.selectionStart;
+    const end = activeInput.selectionEnd;
+    const val = activeInput.value;
+    activeInput.value = val.slice(0, start) + text + val.slice(end);
+    activeInput.selectionStart = activeInput.selectionEnd = start + text.length;
+    updateSuggestions();
+  }
+
+  function deleteChar() {
+    if (!activeInput) return;
+    const start = activeInput.selectionStart;
+    const end = activeInput.selectionEnd;
+    const val = activeInput.value;
+    if (start !== end) {
+      activeInput.value = val.slice(0, start) + val.slice(end);
+      activeInput.selectionStart = activeInput.selectionEnd = start;
+    } else if (start > 0) {
+      activeInput.value = val.slice(0, start - 1) + val.slice(end);
+      activeInput.selectionStart = activeInput.selectionEnd = start - 1;
+    }
+    updateSuggestions();
+  }
+
+  function getCurrentWord() {
+    if (!activeInput) return "";
+    const pos = activeInput.selectionStart;
+    const textBefore = activeInput.value.slice(0, pos);
+    const match = textBefore.match(/([^\s]+)$/);
+    return match ? match[1] : "";
+  }
+
+  function replaceCurrentWord(newWord) {
+    if (!activeInput) return;
+    const pos = activeInput.selectionStart;
+    const textBefore = activeInput.value.slice(0, pos);
+    const textAfter = activeInput.value.slice(pos);
+    const updatedBefore = textBefore.replace(/([^\s]+)$/, newWord);
+    activeInput.value = updatedBefore + textAfter;
+    activeInput.selectionStart = activeInput.selectionEnd = updatedBefore.length;
+    updateSuggestions();
+  }
+
+  function checkCorrection(word) {
+    if (!word) return null;
+    if (corrections[word]) return corrections[word];
+    let normalized = word.replace(/ي/g, "ی").replace(/ك/g, "ک").replace(/ة/g, "ە");
+    if (corrections[normalized]) return corrections[normalized];
+    if (normalized !== word) return normalized;
+    return null;
+  }
+
+  function applyAutoCorrect() {
+    const word = getCurrentWord();
+    const fixed = checkCorrection(word);
+    if (fixed) {
+      replaceCurrentWord(fixed);
+    }
+  }
+
+  function updateSuggestions() {
+    sugEls.forEach(el => {
+      el.textContent = "";
+      el.classList.remove("autocorrect");
+      el.onclick = null;
+    });
+
+    const word = getCurrentWord();
+    if (!word) return;
+
+    const fixed = checkCorrection(word);
+    let list = [];
+
+    if (fixed) {
+      list.push({ text: fixed, isFix: true });
+    }
+
+    const matches = dictionary.filter(w => w.startsWith(word) && w !== fixed).slice(0, 3 - list.length);
+    matches.forEach(m => list.push({ text: m, isFix: false }));
+
+    list.forEach((item, idx) => {
+      if (sugEls[idx]) {
+        sugEls[idx].textContent = item.text;
+        if (item.isFix) sugEls[idx].classList.add("autocorrect");
+        sugEls[idx].onclick = () => {
+          replaceCurrentWord(item.text + " ");
+        };
+      }
+    });
+  }
+
+  function showKeyboard(inputEl) {
+    activeInput = inputEl;
+    inputEl.setAttribute("inputmode", "none");
+    kbContainer.classList.add("kb-open");
+    updateSuggestions();
+  }
+
+  function hideKeyboard() {
+    kbContainer.classList.remove("kb-open");
+    activeInput = null;
+  }
+
+  document.addEventListener("focusin", (e) => {
+    if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) {
+      const type = (e.target.type || "text").toLowerCase();
+      if (["text", "search", "textarea", ""].includes(type)) {
+        showKeyboard(e.target);
+      }
+    }
+  });
+
+  document.addEventListener("touchstart", (e) => {
+    if (!kbContainer.contains(e.target) && e.target !== activeInput &&
+        e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA") {
+      hideKeyboard();
+    }
+  });
+
+  document.getElementById("kb-hide-btn").addEventListener("click", hideKeyboard);
+
+  renderKeys();
+})();
+</script>
+</body>
+</html>
